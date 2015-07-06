@@ -60,9 +60,9 @@ type Deployment struct {
 var templates map[string]string
 
 func extractHref(links []map[string]string, rel string) string {
-	for _, link_map := range links {
-		if link_map["rel"] == rel {
-			return link_map["href"]
+	for _, linkMap := range links {
+		if linkMap["rel"] == rel {
+			return linkMap["href"]
 		} else {
 			continue
 		}
@@ -70,58 +70,58 @@ func extractHref(links []map[string]string, rel string) string {
 	return ""
 }
 
-func inputs_retrieve(client *cm15.Api, inputs_locator string) []Input {
-	inpl := client.InputLocator(inputs_locator)
-	inputs, err := inpl.Index(rsapi.ApiParams{})
+func inputsRetrieve(client *cm15.Api, inputsLocator string) []Input {
+	locator := client.InputLocator(inputsLocator)
+	inputs, err := locator.Index(rsapi.ApiParams{})
 	if err != nil {
 		fmt.Println("failed to find inputs: %s", err)
 	}
 	var inputsRetrieved = make([]Input, len(inputs))
-	for index, inp := range inputs {
-		inputsRetrieved[index] = Input{Name: inp.Name, Value: inp.Value}
+	for index, input := range inputs {
+		inputsRetrieved[index] = Input{Name: input.Name, Value: input.Value}
 	}
 	return inputsRetrieved
 }
 
-func template_retrieve(client *cm15.Api, template_locator string) *cm15.ServerTemplate {
-	tl := client.ServerTemplateLocator(template_locator)
-	template, err := tl.Show(rsapi.ApiParams{})
+func templateRetrieve(client *cm15.Api, templateLocator string) *cm15.ServerTemplate {
+	locator := client.ServerTemplateLocator(templateLocator)
+	template, err := locator.Show(rsapi.ApiParams{})
 	if err != nil {
 		fmt.Println("failed to find server template: %s", err)
 	}
 	return template
 }
 
-func cookbooks_retrieve(client *cm15.Api, cookbook_locator string) *cm15.Cookbook {
-	cbl := client.CookbookLocator(cookbook_locator)
-	cookbook, err := cbl.Show(rsapi.ApiParams{})
+func cookbooksRetrieve(client *cm15.Api, cookbookLocator string) *cm15.Cookbook {
+	locator := client.CookbookLocator(cookbookLocator)
+	cookbook, err := locator.Show(rsapi.ApiParams{})
 	if err != nil {
 		fmt.Println("failed to find cookbook: %s", err)
 	}
 	return cookbook
 }
 
-func cookbook_attachments_retrieve(client *cm15.Api, cookbook_attachments_locator string) []*cm15.CookbookAttachment {
-	cookbookAttachmentLocator := client.CookbookAttachmentLocator(cookbook_attachments_locator)
-	cookbookAttachments, err := cookbookAttachmentLocator.Index(rsapi.ApiParams{})
+func cookbookAttachmentsRetrieve(client *cm15.Api, cookbookAttachmentsLocator string) []*cm15.CookbookAttachment {
+	locator := client.CookbookAttachmentLocator(cookbookAttachmentsLocator)
+	cookbookAttachments, err := locator.Index(rsapi.ApiParams{})
 	if err != nil {
 		fmt.Println("failed to find cookbook attachments: %s", err)
 	}
 	return cookbookAttachments
 }
 
-func extractCookbooks(client *cm15.Api, cookbook_attachments []*cm15.CookbookAttachment) []*cm15.Cookbook {
-	cookbooks := make([]*cm15.Cookbook, len(cookbook_attachments))
-	for i := 0; i < len(cookbook_attachments); i++ {
-		cookbooks[i] = cookbooks_retrieve(client, extractHref(cookbook_attachments[i].Links, "cookbook"))
+func extractCookbooks(client *cm15.Api, cookbookAttachments []*cm15.CookbookAttachment) []*cm15.Cookbook {
+	cookbooks := make([]*cm15.Cookbook, len(cookbookAttachments))
+	for i := 0; i < len(cookbookAttachments); i++ {
+		cookbooks[i] = cookbooksRetrieve(client, extractHref(cookbookAttachments[i].Links, "cookbook"))
 	}
 	return cookbooks
 }
 
-func extractRightScript(client *cm15.Api, rightscript_locator string) RightScript {
+func extractRightScript(client *cm15.Api, rightscriptLocator string) RightScript {
 	var rs RightScript
-	rightScriptLocator := client.RightScriptLocator(rightscript_locator)
-	rightScript, err := rightScriptLocator.Show()
+	locator := client.RightScriptLocator(rightscriptLocator)
+	rightScript, err := locator.Show()
 	if err != nil {
 		fmt.Println("failed to find right script: %s", err)
 	} else {
@@ -134,18 +134,18 @@ func extractRightScript(client *cm15.Api, rightscript_locator string) RightScrip
 	return rs
 }
 
-func extractRecipe(recipe_name string, cookbooks []*cm15.Cookbook) Recipe {
+func extractRecipe(recipeName string, cookbooks []*cm15.Cookbook) Recipe {
 	var recipe Recipe
-	cookbook_name := strings.Split(recipe_name, "::")[0]
+	cookbookName := strings.Split(recipeName, "::")[0]
 	i := 0
 	for ; i < len(cookbooks); i++ {
-		if cookbooks[i].Name == cookbook_name {
+		if cookbooks[i].Name == cookbookName {
 			break
 		}
 	}
 	if i != len(cookbooks) {
 		recipe = Recipe{
-			Name:     recipe_name,
+			Name:     recipeName,
 			Cookbook: cookbooks[i].Name,
 			Revision: cookbooks[i].Version,
 		}
@@ -161,116 +161,105 @@ func extractRecipe(recipe_name string, cookbooks []*cm15.Cookbook) Recipe {
 	return recipe
 }
 
-func instance_retrieve(client *cm15.Api, instance_locator string) *cm15.Instance {
-	il := client.InstanceLocator(instance_locator)
-	instance, err := il.Show(rsapi.ApiParams{})
+func instanceRetrieve(client *cm15.Api, instanceLocator string) *cm15.Instance {
+	locator := client.InstanceLocator(instanceLocator)
+	instance, err := locator.Show(rsapi.ApiParams{})
 	if err != nil {
 		fmt.Println("failed to find instance: %s", err)
 	}
 	return instance
 }
 
-func runnable_binding_retieve(client *cm15.Api, runnable_binding_locator string) []*cm15.RunnableBinding {
-	rbl := client.RunnableBindingLocator(runnable_binding_locator)
-	runnablebindings, err := rbl.Index(rsapi.ApiParams{})
+func runnableBindingsRetrieve(client *cm15.Api, runnableBindingLocator string) []*cm15.RunnableBinding {
+	locator := client.RunnableBindingLocator(runnableBindingLocator)
+	runnableBindings, err := locator.Index(rsapi.ApiParams{})
 	if err != nil {
 		fmt.Printf("failed to find runnable bindings: %s", err)
 	}
-	return runnablebindings
+	return runnableBindings
 }
 
-func extractAttachmentsInfo(client *cm15.Api, runnable_bindings []*cm15.RunnableBinding, cookbooks []*cm15.Cookbook) ([]RightScript, []Recipe) {
-	rightScriptCount, recipeCount := 0, 0
-	for i := 0; i < len(runnable_bindings); i++ {
-		if runnable_bindings[i].Recipe != "" {
-			recipeCount++
+func extractAttachmentsInfo(client *cm15.Api, runnableBindings []*cm15.RunnableBinding, cookbooks []*cm15.Cookbook) ([]RightScript, []Recipe) {
+	var rightScripts []RightScript
+	var recipes []Recipe
+	for i := 0; i < len(runnableBindings); i++ {
+		if runnableBindings[i].Recipe != "" {
+			recipes = append(recipes, extractRecipe(runnableBindings[i].Recipe, cookbooks))
 		} else {
-			rightScriptCount++
-		}
-	}
-	rightScripts := make([]RightScript, rightScriptCount)
-	recipes := make([]Recipe, recipeCount)
-	rightScriptCount, recipeCount = 0, 0
-	for i := 0; i < len(runnable_bindings); i++ {
-		if runnable_bindings[i].Recipe != "" {
-			recipes[recipeCount] = extractRecipe(runnable_bindings[i].Recipe, cookbooks)
-			recipeCount++
-		} else {
-			rightScripts[rightScriptCount] = extractRightScript(client, extractHref(runnable_bindings[i].Links, "right_script"))
-			rightScriptCount++
+			rightScripts = append(rightScripts, extractRightScript(client, extractHref(runnableBindings[i].Links, "right_script")))
 		}
 	}
 	return rightScripts, recipes
 }
 
-func servers_retrieve(client *cm15.Api, servers_locator string) []Server {
-	sl := client.ServerLocator(servers_locator)
-	servers, err := sl.Index(rsapi.ApiParams{"view": "instance_detail"})
+func serversRetrieve(client *cm15.Api, serversLocator string) []Server {
+	serverLocator := client.ServerLocator(serversLocator)
+	servers, err := serverLocator.Index(rsapi.ApiParams{"view": "instance_detail"})
 	if err != nil {
 		fmt.Println("failed to find servers: %s", err)
 	}
-	var server_list = make([]Server, len(servers))
+	var serverList = make([]Server, len(servers))
 	for i := 0; i < len(servers); i++ {
-		next_instance_locator := extractHref(servers[i].Links, "next_instance")
-		current_instance_locator := extractHref(servers[i].Links, "current_instance")
+		nextInstanceLocator := extractHref(servers[i].Links, "next_instance")
+		currentInstanceLocator := extractHref(servers[i].Links, "current_instance")
 		s := Server{Name: servers[i].Name, Locked: false}
-		next_instance := instance_retrieve(client, next_instance_locator)
-		template_locator := extractHref(next_instance.Links, "server_template")
-		template := template_retrieve(client, template_locator)
+		nextInstance := instanceRetrieve(client, nextInstanceLocator)
+		templateLocator := extractHref(nextInstance.Links, "server_template")
+		template := templateRetrieve(client, templateLocator)
 		s.Template = template.Name
-		templates[template_locator] = template.Name
-		s.NextInstance = inputs_retrieve(client, extractHref(next_instance.Links, "inputs"))
-		if current_instance_locator != "" {
-			current_instance := instance_retrieve(client, current_instance_locator)
-			s.CurrentInstance = inputs_retrieve(client, extractHref(current_instance.Links, "inputs"))
-			s.Locked = current_instance.Locked
+		templates[templateLocator] = template.Name
+		s.NextInstance = inputsRetrieve(client, extractHref(nextInstance.Links, "inputs"))
+		if currentInstanceLocator != "" {
+			templateLocator := instanceRetrieve(client, currentInstanceLocator)
+			s.CurrentInstance = inputsRetrieve(client, extractHref(templateLocator.Links, "inputs"))
+			s.Locked = templateLocator.Locked
 		}
-		server_list[i] = s
+		serverList[i] = s
 	}
-	return server_list
+	return serverList
 }
 
-func server_arrays_retrieve(client *cm15.Api, servers_locator string) []ServerArray {
-	sal := client.ServerArrayLocator(servers_locator)
-	serverarrays, err := sal.Index(rsapi.ApiParams{"view": "instance_detail"})
+func serverArraysRetrieve(client *cm15.Api, serverArraysLocator string) []ServerArray {
+	arrayLocator := client.ServerArrayLocator(serverArraysLocator)
+	serverArrays, err := arrayLocator.Index(rsapi.ApiParams{"view": "instance_detail"})
 	if err != nil {
 		fmt.Println("failed to find servers: %s", err)
 	}
-	var server_array_list = make([]ServerArray, len(serverarrays))
-	for i := 0; i < len(serverarrays); i++ {
-		next_instance_locator := extractHref(serverarrays[i].Links, "next_instance")
-		current_instances_locator := extractHref(serverarrays[i].Links, "current_instances")
-		sa := ServerArray{Name: serverarrays[i].Name, Locked: false}
-		next_instance := instance_retrieve(client, next_instance_locator)
-		template_locator := extractHref(next_instance.Links, "server_template")
-		template := template_retrieve(client, template_locator)
+	var serverArrayList = make([]ServerArray, len(serverArrays))
+	for i := 0; i < len(serverArrays); i++ {
+		nextInstanceLocator := extractHref(serverArrays[i].Links, "next_instance")
+		currentInstancesLocator := extractHref(serverArrays[i].Links, "current_instances")
+		sa := ServerArray{Name: serverArrays[i].Name, Locked: false}
+		nextInstance := instanceRetrieve(client, nextInstanceLocator)
+		templateLocator := extractHref(nextInstance.Links, "server_template")
+		template := templateRetrieve(client, templateLocator)
 		sa.Template = template.Name
-		templates[template_locator] = template.Name
-		sa.NextInstance = inputs_retrieve(client, extractHref(next_instance.Links, "inputs"))
-		il := client.InstanceLocator(current_instances_locator)
-		instances, err := il.Index(rsapi.ApiParams{})
+		templates[templateLocator] = template.Name
+		sa.NextInstance = inputsRetrieve(client, extractHref(nextInstance.Links, "inputs"))
+		instanceLocator := client.InstanceLocator(currentInstancesLocator)
+		instances, err := instanceLocator.Index(rsapi.ApiParams{})
 		if err != nil {
 			fmt.Println("failed to find instances: %s", err)
 		}
 		if len(instances) != 0 {
-			current_instance_locator := extractHref(instances[0].Links, "self")
-			current_instance := instance_retrieve(client, current_instance_locator)
-			sa.CurrentInstance = inputs_retrieve(client, extractHref(current_instance.Links, "inputs"))
-			sa.Locked = current_instance.Locked
+			currentInstanceLocator := extractHref(instances[0].Links, "self")
+			currentInstance := instanceRetrieve(client, currentInstanceLocator)
+			sa.CurrentInstance = inputsRetrieve(client, extractHref(currentInstance.Links, "inputs"))
+			sa.Locked = currentInstance.Locked
 		}
-		server_array_list[i] = sa
+		serverArrayList[i] = sa
 	}
-	return server_array_list
+	return serverArrayList
 }
 
 func main() {
-	// 1. Retrieve login and endpoint information
+	// Retrieve login and endpoint information
 	email := flag.String("e", "", "Login email")
 	pwd := flag.String("p", "", "Login password")
 	account := flag.Int("a", 0, "Account id")
 	host := flag.String("h", "us-3.rightscale.com", "RightScale API host")
 	insecure := flag.Bool("insecure", false, "Use HTTP instead of HTTPS - used for testing")
-	deployment_id := flag.String("d", "", "Deployment id")
+	deploymentId := flag.String("d", "", "Deployment id")
 	flag.Parse()
 	if *email == "" {
 		fmt.Println("Login email required")
@@ -284,11 +273,11 @@ func main() {
 	if *host == "" {
 		fmt.Println("Host required")
 	}
-	if *deployment_id == "" {
+	if *deploymentId == "" {
 		fmt.Println("Deployment required")
 	}
 
-	// 2. Setup client using basic auth
+	// Setup client using basic auth
 	auth := rsapi.NewBasicAuthenticator(*email, *pwd, *account)
 	client := cm15.New(*host, auth, nil, nil)
 	if *insecure {
@@ -298,44 +287,44 @@ func main() {
 		fmt.Println("invalid credentials: %s", err)
 	}
 
-	//3. Deployment show
-	// 3. Make cloud index call using extended view
-	d := client.DeploymentLocator("/api/deployments/" + *deployment_id)
-	deplymnt, err := d.Show(rsapi.ApiParams{})
+	// Deployment show
+	deploymentLocator := client.DeploymentLocator("/api/deployments/" + *deploymentId)
+	deployment, err := deploymentLocator.Show(rsapi.ApiParams{})
 	if err != nil {
 		fmt.Println("failed to find deployment: %s", err)
 	}
+	// Initialize the template maps to store only unique server templates
 	templates = make(map[string]string)
-	servers_locator := extractHref(deplymnt.Links, "servers")
-	srvs := servers_retrieve(client, servers_locator)
-	server_arrays_locator := extractHref(deplymnt.Links, "server_arrays")
-	sarrays := server_arrays_retrieve(client, server_arrays_locator)
-	var server_templates = make([]ServerTemplate, len(templates))
+	serversLocator := extractHref(deployment.Links, "servers")
+	servers := serversRetrieve(client, serversLocator)
+	serverArraysLocator := extractHref(deployment.Links, "server_arrays")
+	serverArrays := serverArraysRetrieve(client, serverArraysLocator)
+	var serverTemplates = make([]ServerTemplate, len(templates))
 	i := 0
 	for key, _ := range templates {
-		tmplt := template_retrieve(client, key)
+		template := templateRetrieve(client, key)
 		st := ServerTemplate{
-			Name:     tmplt.Name,
-			Revision: tmplt.Revision,
+			Name:     template.Name,
+			Revision: template.Revision,
 		}
-		rbindings := runnable_binding_retieve(client, extractHref(tmplt.Links, "runnable_bindings"))
-		cookbook_attachments := cookbook_attachments_retrieve(client, extractHref(tmplt.Links, "cookbook_attachments"))
-		cookbooks := extractCookbooks(client, cookbook_attachments)
-		st.RightScripts, st.Recipes = extractAttachmentsInfo(client, rbindings, cookbooks)
-		server_templates[i] = st
+		runnableBindings := runnableBindingsRetrieve(client, extractHref(template.Links, "runnable_bindings"))
+		cookbookAttachments := cookbookAttachmentsRetrieve(client, extractHref(template.Links, "cookbook_attachments"))
+		cookbooks := extractCookbooks(client, cookbookAttachments)
+		st.RightScripts, st.Recipes = extractAttachmentsInfo(client, runnableBindings, cookbooks)
+		serverTemplates[i] = st
 		i++
 	}
-	deployment_struct := &Deployment{
-		Name:               deplymnt.Name,
-		Inputs:             inputs_retrieve(client, extractHref(deplymnt.Links, "inputs")),
-		Servers:            srvs,
-		ServersNumber:      len(srvs),
-		ServerArrays:       sarrays,
-		ServerArraysNumber: len(sarrays),
-		ServerTemplates:    server_templates,
+	deploymentStruct := Deployment{
+		Name:               deployment.Name,
+		Inputs:             inputsRetrieve(client, extractHref(deployment.Links, "inputs")),
+		Servers:            servers,
+		ServersNumber:      len(servers),
+		ServerArrays:       serverArrays,
+		ServerArraysNumber: len(serverArrays),
+		ServerTemplates:    serverTemplates,
 	}
-	b, err := json.MarshalIndent(deployment_struct, "", "    ")
+	jsonBody, err := json.MarshalIndent(deploymentStruct, "", "    ")
 	if err == nil {
-		fmt.Println(string(b))
+		fmt.Println(string(jsonBody))
 	}
 }
