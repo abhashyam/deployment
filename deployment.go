@@ -6,24 +6,34 @@ import (
 	"fmt"
 	"strings"
 
-	"gopkg.in/rightscale/rsc.v2/cm15"
-	"gopkg.in/rightscale/rsc.v2/rsapi"
+	"github.com/rightscale/rsc/cm15"
+	"github.com/rightscale/rsc/rsapi"
 )
 
 type Input struct {
 	Name, Value string
 }
 
+type Volume struct {
+	Name             string
+	VolumeAttachment string
+	Size             int
+	CreatedAt        *cm15.RubyTime
+	UpdatedAt        *cm15.RubyTime
+}
+
 type Server struct {
 	Name, Template                string
 	CurrentInstance, NextInstance []Input
 	Locked                        bool
+	Volumes                       []Volume
 }
 
 type ServerArray struct {
 	Name, Template                string
 	CurrentInstance, NextInstance []Input
 	Locked                        bool
+	Volumes                       []Volume
 }
 
 type RightScript struct {
@@ -47,6 +57,15 @@ type ServerTemplate struct {
 	Recipes      []Recipe
 }
 
+type Alert struct {
+	Name           string
+	Escaltion      string
+	AlertCondition string
+	Subject        string
+	CreatedAt      *cm15.RubyTime
+	UpdatedAt      *cm15.RubyTime
+}
+
 type Deployment struct {
 	Name               string
 	ServersNumber      int
@@ -55,9 +74,11 @@ type Deployment struct {
 	ServerArrays       []ServerArray
 	Inputs             []Input
 	ServerTemplates    []ServerTemplate
+	Alerts             []Alert
 }
 
 var templates map[string]string
+var alerts []*cm15.AlertSpec
 
 func extractHref(links []map[string]string, rel string) string {
 	for _, linkMap := range links {
@@ -99,6 +120,33 @@ func cookbooksRetrieve(client *cm15.Api, cookbookLocator string) *cm15.Cookbook 
 		fmt.Println("failed to find cookbook: %s", err)
 	}
 	return cookbook
+}
+
+func volumeAttachmentsRetrive(client *cm15.Api, volumeAttachmentsLocator string) []*cm15.VolumeAttachment {
+	locator := client.VolumeAttachmentLocator(volumeAttachmentsLocator)
+	volumeAttachments, err := locator.Index(rsapi.ApiParams{})
+	if err != nil {
+		fmt.Println("failed to find volume attachments: %s", err)
+	}
+	return volumeAttachments
+}
+
+func volumeRetrieve(client *cm15.Api, volumeLocator string) *cm15.Volume {
+	locator := client.VolumeLocator(volumeLocator)
+	volume, err := locator.Show(rsapi.ApiParams{})
+	if err != nil {
+		fmt.Println("failed to find volume: %s", err)
+	}
+	return volume
+}
+
+func alertsRetrieve(client *cm15.Api, alertsLocator string) []*cm15.AlertSpec {
+	locator := client.AlertSpecLocator(alertsLocator)
+	alertSpec, err := locator.Index(rsapi.ApiParams{"with_inherited": "false"})
+	if err != nil {
+		fmt.Println("failed to find alertspec: %s", err)
+	}
+	return alertSpec
 }
 
 func cookbookAttachmentsRetrieve(client *cm15.Api, cookbookAttachmentsLocator string) []*cm15.CookbookAttachment {
@@ -192,6 +240,22 @@ func extractAttachmentsInfo(client *cm15.Api, runnableBindings []*cm15.RunnableB
 	return rightScripts, recipes
 }
 
+func extractVolumesInfo(client *cm15.Api, volumeAttachmentsLocator string) []Volume {
+	volumeAttachments := volumeAttachmentsRetrive(client, volumeAttachmentsLocator)
+	volumes := make([]Volume, len(volumeAttachments))
+	for index, volumeAttachment := range volumeAttachments {
+		volume := volumeRetrieve(client, extractHref(volumeAttachment.Links, "volume"))
+		volumes[index] = Volume{
+			Name:             volume.Name,
+			Size:             volume.Size,
+			VolumeAttachment: extractHref(volumeAttachment.Links, "self"),
+			CreatedAt:        volume.CreatedAt,
+			UpdatedAt:        volume.UpdatedAt,
+		}
+	}
+	return volumes
+}
+
 func serversRetrieve(client *cm15.Api, serversLocator string) []Server {
 	serverLocator := client.ServerLocator(serversLocator)
 	servers, err := serverLocator.Index(rsapi.ApiParams{"view": "instance_detail"})
@@ -208,11 +272,17 @@ func serversRetrieve(client *cm15.Api, serversLocator string) []Server {
 		template := templateRetrieve(client, templateLocator)
 		s.Template = template.Name
 		templates[templateLocator] = template.Name
+		alertSpecs := alertsRetrieve(client, extractHref(servers[i].Links, "alert_specs"))
+		alerts = append(alerts, alertSpecs...)
 		s.NextInstance = inputsRetrieve(client, extractHref(nextInstance.Links, "inputs"))
 		if currentInstanceLocator != "" {
 			templateLocator := instanceRetrieve(client, currentInstanceLocator)
 			s.CurrentInstance = inputsRetrieve(client, extractHref(templateLocator.Links, "inputs"))
 			s.Locked = templateLocator.Locked
+			s.Volumes = extractVolumesInfo(client, currentInstanceLocator+"/volume_attachments")
+			if len(s.Volumes) == 0 {
+				s.Volumes = nil
+			}
 		}
 		serverList[i] = s
 	}
@@ -229,12 +299,15 @@ func serverArraysRetrieve(client *cm15.Api, serverArraysLocator string) []Server
 	for i := 0; i < len(serverArrays); i++ {
 		nextInstanceLocator := extractHref(serverArrays[i].Links, "next_instance")
 		currentInstancesLocator := extractHref(serverArrays[i].Links, "current_instances")
+		var volumes []Volume
 		sa := ServerArray{Name: serverArrays[i].Name, Locked: false}
 		nextInstance := instanceRetrieve(client, nextInstanceLocator)
 		templateLocator := extractHref(nextInstance.Links, "server_template")
 		template := templateRetrieve(client, templateLocator)
 		sa.Template = template.Name
 		templates[templateLocator] = template.Name
+		alertSpecs := alertsRetrieve(client, extractHref(serverArrays[i].Links, "alert_specs"))
+		alerts = append(alerts, alertSpecs...)
 		sa.NextInstance = inputsRetrieve(client, extractHref(nextInstance.Links, "inputs"))
 		instanceLocator := client.InstanceLocator(currentInstancesLocator)
 		instances, err := instanceLocator.Index(rsapi.ApiParams{})
@@ -247,9 +320,22 @@ func serverArraysRetrieve(client *cm15.Api, serverArraysLocator string) []Server
 			sa.CurrentInstance = inputsRetrieve(client, extractHref(currentInstance.Links, "inputs"))
 			sa.Locked = currentInstance.Locked
 		}
+		for _, instance := range instances {
+			v := extractVolumesInfo(client, extractHref(instance.Links, "self")+"/volume_attachments")
+			volumes = append(volumes, v...)
+		}
+		if len(volumes) != 0 {
+			sa.Volumes = volumes
+		}
 		serverArrayList[i] = sa
 	}
 	return serverArrayList
+}
+func htmlReplace(jsonBody string) string {
+	var newString string
+	newString = strings.Replace(jsonBody, "\\u003c", "<", -1)
+	newString = strings.Replace(newString, "\\u003e", ">", -1)
+	return newString
 }
 
 func main() {
@@ -258,7 +344,6 @@ func main() {
 	pwd := flag.String("p", "", "Login password")
 	account := flag.Int("a", 0, "Account id")
 	host := flag.String("h", "us-3.rightscale.com", "RightScale API host")
-	insecure := flag.Bool("insecure", false, "Use HTTP instead of HTTPS - used for testing")
 	deploymentId := flag.String("d", "", "Deployment id")
 	flag.Parse()
 	if *email == "" {
@@ -279,10 +364,8 @@ func main() {
 
 	// Setup client using basic auth
 	auth := rsapi.NewBasicAuthenticator(*email, *pwd, *account)
-	client := cm15.New(*host, auth, nil, nil)
-	if *insecure {
-		client.Insecure()
-	}
+	client := cm15.New(*host, auth)
+
 	if err := client.CanAuthenticate(); err != nil {
 		fmt.Println("invalid credentials: %s", err)
 	}
@@ -311,9 +394,24 @@ func main() {
 		cookbookAttachments := cookbookAttachmentsRetrieve(client, extractHref(template.Links, "cookbook_attachments"))
 		cookbooks := extractCookbooks(client, cookbookAttachments)
 		st.RightScripts, st.Recipes = extractAttachmentsInfo(client, runnableBindings, cookbooks)
+		alertSpecs := alertsRetrieve(client, extractHref(template.Links, "alert_specs"))
+		alerts = append(alerts, alertSpecs...)
 		serverTemplates[i] = st
 		i++
 	}
+	var alertSpecs = make([]Alert, len(alerts))
+	for i = 0; i < len(alerts); i++ {
+		alert := Alert{
+			Name:           alerts[i].Name,
+			Escaltion:      alerts[i].EscalationName,
+			AlertCondition: fmt.Sprintf("%s.%s %s %s for %d", alerts[i].File, alerts[i].Variable, alerts[i].Condition, alerts[i].Threshold, alerts[i].Duration),
+			Subject:        extractHref(alerts[i].Links, "subject"),
+			CreatedAt:      alerts[i].CreatedAt,
+			UpdatedAt:      alerts[i].UpdatedAt,
+		}
+		alertSpecs[i] = alert
+	}
+
 	deploymentStruct := Deployment{
 		Name:               deployment.Name,
 		Inputs:             inputsRetrieve(client, extractHref(deployment.Links, "inputs")),
@@ -322,9 +420,10 @@ func main() {
 		ServerArrays:       serverArrays,
 		ServerArraysNumber: len(serverArrays),
 		ServerTemplates:    serverTemplates,
+		Alerts:             alertSpecs,
 	}
 	jsonBody, err := json.MarshalIndent(deploymentStruct, "", "    ")
 	if err == nil {
-		fmt.Println(string(jsonBody))
+		fmt.Println(htmlReplace(string(jsonBody)))
 	}
 }
