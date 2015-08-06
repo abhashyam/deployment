@@ -6,31 +6,34 @@ import (
 	"fmt"
 	"strings"
 
-	"gopkg.in/rightscale/rsc.v3/cm15"
-	"gopkg.in/rightscale/rsc.v3/rsapi"
+	"github.com/rightscale/rsc/cm15"
+	"github.com/rightscale/rsc/rsapi"
 )
 
 type Input struct {
 	Name, Value string
 }
+
 type Volume struct {
-	Name      string
-	Size      int
-	CreatedAt *cm15.RubyTime
-	Status    *cm15.RubyTime
+	Name             string
+	VolumeAttachment string
+	Size             int
+	CreatedAt        *cm15.RubyTime
+	UpdatedAt        *cm15.RubyTime
 }
 
 type Server struct {
 	Name, Template                string
 	CurrentInstance, NextInstance []Input
-	Volumes
-	Locked bool
+	Locked                        bool
+	Volumes                       []Volume
 }
 
 type ServerArray struct {
 	Name, Template                string
 	CurrentInstance, NextInstance []Input
 	Locked                        bool
+	Volumes                       []Volume
 }
 
 type RightScript struct {
@@ -117,6 +120,24 @@ func cookbooksRetrieve(client *cm15.Api, cookbookLocator string) *cm15.Cookbook 
 		fmt.Println("failed to find cookbook: %s", err)
 	}
 	return cookbook
+}
+
+func volumeAttachmentsRetrive(client *cm15.Api, volumeAttachmentsLocator string) []*cm15.VolumeAttachment {
+	locator := client.VolumeAttachmentLocator(volumeAttachmentsLocator)
+	volumeAttachments, err := locator.Index(rsapi.ApiParams{})
+	if err != nil {
+		fmt.Println("failed to find volume attachments: %s", err)
+	}
+	return volumeAttachments
+}
+
+func volumeRetrieve(client *cm15.Api, volumeLocator string) *cm15.Volume {
+	locator := client.VolumeLocator(volumeLocator)
+	volume, err := locator.Show(rsapi.ApiParams{})
+	if err != nil {
+		fmt.Println("failed to find volume: %s", err)
+	}
+	return volume
 }
 
 func alertsRetrieve(client *cm15.Api, alertsLocator string) []*cm15.AlertSpec {
@@ -219,6 +240,22 @@ func extractAttachmentsInfo(client *cm15.Api, runnableBindings []*cm15.RunnableB
 	return rightScripts, recipes
 }
 
+func extractVolumesInfo(client *cm15.Api, volumeAttachmentsLocator string) []Volume {
+	volumeAttachments := volumeAttachmentsRetrive(client, volumeAttachmentsLocator)
+	volumes := make([]Volume, len(volumeAttachments))
+	for index, volumeAttachment := range volumeAttachments {
+		volume := volumeRetrieve(client, extractHref(volumeAttachment.Links, "volume"))
+		volumes[index] = Volume{
+			Name:             volume.Name,
+			Size:             volume.Size,
+			VolumeAttachment: extractHref(volumeAttachment.Links, "self"),
+			CreatedAt:        volume.CreatedAt,
+			UpdatedAt:        volume.UpdatedAt,
+		}
+	}
+	return volumes
+}
+
 func serversRetrieve(client *cm15.Api, serversLocator string) []Server {
 	serverLocator := client.ServerLocator(serversLocator)
 	servers, err := serverLocator.Index(rsapi.ApiParams{"view": "instance_detail"})
@@ -242,6 +279,10 @@ func serversRetrieve(client *cm15.Api, serversLocator string) []Server {
 			templateLocator := instanceRetrieve(client, currentInstanceLocator)
 			s.CurrentInstance = inputsRetrieve(client, extractHref(templateLocator.Links, "inputs"))
 			s.Locked = templateLocator.Locked
+			s.Volumes = extractVolumesInfo(client, currentInstanceLocator+"/volume_attachments")
+			if len(s.Volumes) == 0 {
+				s.Volumes = nil
+			}
 		}
 		serverList[i] = s
 	}
@@ -258,6 +299,7 @@ func serverArraysRetrieve(client *cm15.Api, serverArraysLocator string) []Server
 	for i := 0; i < len(serverArrays); i++ {
 		nextInstanceLocator := extractHref(serverArrays[i].Links, "next_instance")
 		currentInstancesLocator := extractHref(serverArrays[i].Links, "current_instances")
+		var volumes []Volume
 		sa := ServerArray{Name: serverArrays[i].Name, Locked: false}
 		nextInstance := instanceRetrieve(client, nextInstanceLocator)
 		templateLocator := extractHref(nextInstance.Links, "server_template")
@@ -277,6 +319,13 @@ func serverArraysRetrieve(client *cm15.Api, serverArraysLocator string) []Server
 			currentInstance := instanceRetrieve(client, currentInstanceLocator)
 			sa.CurrentInstance = inputsRetrieve(client, extractHref(currentInstance.Links, "inputs"))
 			sa.Locked = currentInstance.Locked
+		}
+		for _, instance := range instances {
+			v := extractVolumesInfo(client, extractHref(instance.Links, "self")+"/volume_attachments")
+			volumes = append(volumes, v...)
+		}
+		if len(volumes) != 0 {
+			sa.Volumes = volumes
 		}
 		serverArrayList[i] = sa
 	}
